@@ -1,2 +1,2 @@
 - [BOARD](https://github.com/orgs/itpplasma/projects/10)
-- [Open pull requests](https://github.com/pulls?q=is%3Aopen+is%3Apr+archived%3Afalse+user%3Aitpplasma+)
+- [Pull requests](https://github.com/pulls?q=is%3Aopen+is%3Apr+archived%3Afalse+user%3Aitpplasma+)
