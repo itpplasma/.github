@@ -7,23 +7,26 @@ permissions:
   contents: read
 jobs:
   python:
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.9', '3.10', '3.11', '3.12', '3.13', '3.14']
     runs-on: [self-hosted, itp-macos]
     timeout-minutes: 8
     steps:
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.11'
+      - name: Set up native private CPython
+        run: /opt/itp-ci-macos/setup-python.sh '${{ matrix.python }}' 
       - name: Verify native private Python and package installation
         shell: bash
         run: |
           set -euo pipefail
-          python - <<'PY'
+          EXPECTED_PYTHON='${{ matrix.python }}' python - <<'PY' 
           import os, platform, sys
           print(sys.version)
           print(platform.machine(), sys.prefix)
           assert platform.machine() == 'arm64'
-          assert sys.version_info[:2] == (3, 11)
+          assert '.'.join(map(str, sys.version_info[:2])) == os.environ['EXPECTED_PYTHON']
           assert sys.prefix.startswith(os.environ['HOME'] + '/')
           PY
-          python -m pip install --disable-pip-version-check --no-cache-dir numpy==1.26.4
-          python -c 'import numpy; assert numpy.arange(5).sum() == 10; print(numpy.__version__)'
+          python -m pip install --disable-pip-version-check --no-cache-dir --only-binary=:all: numpy scipy pytest
+          python -c 'import scipy, numpy; assert numpy.arange(5).sum() == 10; print(numpy.__version__)'
