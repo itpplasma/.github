@@ -14,11 +14,21 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-          ref: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha || github.sha }}
-          persist-credentials: false
+      # Public consumers need Git objects, never recursive submodule/auth setup.
+      - name: Fetch the public consumer at the exact tested revision
+        env:
+          REPOSITORY: ${{ github.repository }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha || github.sha }}
+        run: |
+          git init .
+          git remote add origin "https://github.com/$REPOSITORY.git"
+          refs=("$HEAD")
+          if [ -n "$BASE" ] && [ "$BASE" != 0000000000000000000000000000000000000000 ]; then
+            refs+=("$BASE")
+          fi
+          git fetch --no-tags origin "${refs[@]}"
+          GIT_LFS_SKIP_SMUDGE=1 git -c submodule.recurse=false checkout --detach "$HEAD"
       - uses: actions/checkout@v6
         with:
           repository: itpplasma/.github
