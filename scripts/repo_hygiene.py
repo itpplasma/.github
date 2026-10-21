@@ -119,10 +119,10 @@ def check(staged, base, head, repository=None):
         blobs = []
         commits = git('rev-list', '--reverse', f'{base}..{head}').decode().splitlines()
         for commit in commits:
-            blobs.extend(entries(git('diff-tree', '--root', '--no-commit-id', '-r',
+            blobs.extend(entries(git('diff-tree', '--root', '-m', '--no-commit-id', '-r',
                                      '--raw', '-z', '--no-abbrev', '--no-renames',
                                      '--diff-filter=AMT', commit)))
-        # Includes resolutions introduced by merge commits (diff-tree skips merges).
+        # Also inspect the net range diff; -m above checks each merge parent.
         blobs.extend(entries(git('diff', '--raw', '-z', '--no-abbrev', '--no-renames',
                                  '--diff-filter=AMT', base, head)))
     rules, allowed_identities = allowances(None if staged else head)
