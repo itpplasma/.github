@@ -1,0 +1,13 @@
+name: CI
+on:
+  pull_request:
+  merge_group:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  repo-hygiene:
+    uses: ./.github/workflows/repo-hygiene.yml
+    with:
+      hygiene-revision: ${{ github.sha }}

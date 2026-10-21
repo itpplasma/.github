@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+hook_dir="$(cd "$(dirname "$0")" && pwd)"
+export PATH="$hook_dir/bin:$HOME/.local/bin:$PATH"
+python3 "$hook_dir/repo_hygiene.py" --staged
+
+# Resolve the actual repository hook, not core.hooksPath (also in worktrees).
+common_dir="$(git rev-parse --git-common-dir)"
+native_hook="$common_dir/hooks/pre-commit"
+if [[ -x "$native_hook" && ! "$native_hook" -ef "$0" ]]; then
+  exec "$native_hook" "$@"
+fi
+if [[ -f .pre-commit-config.yaml ]]; then
+  if ! command -v pre-commit >/dev/null; then
+    echo 'Repository hooks require pre-commit; install it before committing.' >&2
+    exit 1
+  fi
+  exec pre-commit run --hook-stage pre-commit
+fi
