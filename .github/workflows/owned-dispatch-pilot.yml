@@ -1,0 +1,32 @@
+name: Owned restricted dispatcher pilot
+on:
+  push:
+    branches: [ci/owned-dispatch-pilot-20261021]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  dispatch:
+    runs-on: [self-hosted, itp-dispatch]
+    timeout-minutes: 10
+    steps:
+      - name: Verify bounded provisioning and restricted Slurm dispatch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$SCI_CPUS" = 2
+          python3 -m pip --version
+          git lfs version
+          test ! -S /var/run/docker.sock
+          test -r /opt/sci-key/id_ed25519
+          stage=$(mktemp -d "$RUNNER_TEMP/pilot.XXXXXX")
+          mkdir -p "$stage/src/ci"
+          cat > "$stage/src/ci/run.sh" <<'SH'
+          #!/bin/bash
+          set -eu
+          echo "Owned Slurm job $SLURM_JOB_ID on $(hostname) CPUs=$SLURM_CPUS_PER_TASK"
+          grep -m1 'model name' /proc/cpuinfo
+          test "$SLURM_CPUS_PER_TASK" -ge 2
+          SH
+          tar -C "$stage" -cf - src | zstd -q -o "$RUNNER_TEMP/pilot.tar.zst"
+          sci-dispatch check "$RUNNER_TEMP/pilot.tar.zst"
