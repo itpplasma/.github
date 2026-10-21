@@ -1,0 +1,59 @@
+name: Owned runner isolation pilot
+on:
+  push:
+    branches: [ci/owned-runner-pilot-20261021]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [itp-ubuntu24, itp-macos]
+    runs-on: [self-hosted, '${{ matrix.platform }}']
+    timeout-minutes: 10
+    steps:
+      - name: Native compiler and isolation controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e "$HOME/.itp-pilot-marker"
+          touch "$HOME/.itp-pilot-marker"
+          printf 'program pilot\nprint *, 42\nend program\n' > "$RUNNER_TEMP/pilot.f90"
+          gfortran "$RUNNER_TEMP/pilot.f90" -o "$RUNNER_TEMP/pilot"
+          "$RUNNER_TEMP/pilot" | tee "$RUNNER_TEMP/result"
+          grep -q 42 "$RUNNER_TEMP/result"
+          curl -fsS --max-time 30 https://api.github.com/zen >/dev/null
+          for address in 10.0.0.1 129.27.80.131; do
+            code=$(curl -sS -o /dev/null -w '%{http_connect}' --max-time 10 "https://$address/" || true)
+            test "$code" = 403
+          done
+          if curl -sS --noproxy '*' --connect-timeout 3 --max-time 5 https://1.1.1.1/ >/dev/null; then exit 1; fi
+          test ! -S /var/run/docker.sock
+          test ! -e /run/secrets/sci-key
+          if [ "$(uname -s)" = Darwin ]; then
+            if touch /private/var/itpci/shared-pilot-poison; then exit 1; fi
+            if ls /Users/ert/.ssh >/dev/null; then exit 1; fi
+          else
+            python --version
+            gh --version
+            sudo apt-get update -o APT::Update::Error-Mode=any
+            sudo apt-get install -y --no-install-recommends bc
+          fi
+  fresh:
+    needs: native
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [itp-ubuntu24, itp-macos]
+    runs-on: [self-hosted, '${{ matrix.platform }}']
+    timeout-minutes: 3
+    steps:
+      - name: Fresh per-job home and scratch
+        shell: bash
+        run: |
+          set -eu
+          test ! -e "$HOME/.itp-pilot-marker"
+          test ! -e "$RUNNER_TEMP/pilot"
+          echo 'Fresh job state verified'
