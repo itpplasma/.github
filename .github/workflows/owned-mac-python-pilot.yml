@@ -1,0 +1,29 @@
+name: Owned Mac Python cache pilot
+on:
+  push:
+    branches: [ci/owned-mac-python-pilot-20261021]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  python:
+    runs-on: [self-hosted, itp-macos]
+    timeout-minutes: 8
+    steps:
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Verify native private Python and package installation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os, platform, sys
+          print(sys.version)
+          print(platform.machine(), sys.prefix)
+          assert platform.machine() == 'arm64'
+          assert sys.version_info[:2] == (3, 11)
+          assert sys.prefix.startswith(os.environ['HOME'] + '/')
+          PY
+          python -m pip install --disable-pip-version-check --no-cache-dir numpy==1.26.4
+          python -c 'import numpy; assert numpy.arange(5).sum() == 10; print(numpy.__version__)'
