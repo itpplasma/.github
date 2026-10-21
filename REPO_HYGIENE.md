@@ -12,6 +12,27 @@ range or staged index, using upstream default rules with redacted output.
 Repository config, inline suppressions and environment overrides are ignored.
 Secret detection has no path exceptions.
 
+CI also checks the author AND committer of every commit in `BASE..HEAD`, including
+intermediate and merge commits, through the GitHub commit API using the read-only
+Actions token. Each email must resolve to a GitHub account. GitHub bots (including
+`github-actions`, `dependabot` and accounts ending in `[bot]`) are accepted through
+their GitHub login; a bot-looking display name alone does not establish identity.
+Unregistered legacy identities need an exact email and reason under `identities:`
+in the committed `.repo-hygiene-allow`, for example:
+
+```text
+identities:
+  legacy@example.org	Published historical contributor
+```
+
+Entries remain TAB-separated; identity wildcards are rejected. A `paths:` section
+can resume path allowances after `identities:`. Existing unsectioned path entries
+remain valid. Review identity exceptions alongside the commits they authorize.
+API failures fail the CI check. Offline range checks inspect blobs and secrets;
+add `--github-repository OWNER/REPO` with `GITHUB_TOKEN` to verify identities too.
+The staged local check stays offline and only warns when the effective author or
+committer email differs from `git config user.email`; it does not block that case.
+
 Each added/modified file blob must be at most 1 MiB. Data/archive/document types
 require an explicit fixture allowance. Unique, non-exempt added blob bytes sum
 to at most 5 MiB per PR (or staged change); repeated copies of the same blob

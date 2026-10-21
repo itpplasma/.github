@@ -45,12 +45,13 @@ jobs:
       - name: Test the shared gate
         if: github.repository == 'itpplasma/.github'
         run: python3 -m unittest discover -s .hygiene-tools/tests -v
-      - name: Check every added blob and secret in the PR range
+      - name: Check every commit identity, added blob and secret in the PR range
         env:
+          GITHUB_TOKEN: ${{ github.token }}
           BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
           HEAD: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha || github.sha }}
         run: |
           if [ -z "$BASE" ] || [ "$BASE" = 0000000000000000000000000000000000000000 ]; then
             BASE=$(git rev-parse "$HEAD^")
           fi
-          python3 .hygiene-tools/scripts/repo_hygiene.py --base "$BASE" --head "$HEAD"
+          python3 .hygiene-tools/scripts/repo_hygiene.py --base "$BASE" --head "$HEAD" --github-repository "${{ github.repository }}"
