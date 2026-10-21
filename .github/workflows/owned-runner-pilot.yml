@@ -10,7 +10,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform: [itp-ubuntu24]
+        platform: [itp-provisioning-pilot]
     runs-on: [self-hosted, '${{ matrix.platform }}']
     timeout-minutes: 10
     steps:
@@ -18,7 +18,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(nproc)" = 2
+          test "$(env -u OMP_NUM_THREADS nproc)" = 2
+          cat /proc/self/status | grep Cpus_allowed_list
           test ! -e "$HOME/.itp-pilot-marker"
           touch "$HOME/.itp-pilot-marker"
           printf 'program pilot\nprint *, 42\nend program\n' > "$RUNNER_TEMP/pilot.f90"
@@ -26,7 +27,7 @@ jobs:
           "$RUNNER_TEMP/pilot" | tee "$RUNNER_TEMP/result"
           grep -q 42 "$RUNNER_TEMP/result"
           curl -fsS --max-time 30 https://api.github.com/zen >/dev/null
-          for address in 10.0.0.1 129.27.80.131; do
+          for address in 10.0.0.1 129.27.80.131 '[::ffff:129.27.80.131]'; do
             code=$(curl -sS -o /dev/null -w '%{http_connect}' --max-time 10 "https://$address/" || true)
             test "$code" = 403
           done
@@ -41,13 +42,15 @@ jobs:
             gh --version
             sudo apt-get update -o APT::Update::Error-Mode=any
             sudo apt-get install -y --no-install-recommends bc
+            sudo wget -q --method=HEAD https://apt.llvm.org/noble/ -O /dev/null
+            sudo curl -fsSI --max-time 30 https://apt.llvm.org/noble/ >/dev/null
           fi
   fresh:
     needs: native
     strategy:
       fail-fast: false
       matrix:
-        platform: [itp-ubuntu24]
+        platform: [itp-provisioning-pilot]
     runs-on: [self-hosted, '${{ matrix.platform }}']
     timeout-minutes: 3
     steps:
