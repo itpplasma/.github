@@ -5,6 +5,12 @@ Call `.github/workflows/repo-hygiene.yml` at an immutable commit with the same
 `repo-hygiene / repo-hygiene` check (caller job / reusable job) in branch rules.
 This public, small workflow needs only `contents: read` and no paid service.
 
+Ordinary PR events report the required check as skipped before a runner is
+assigned. The reusable leaf carries the condition so the nested required check
+name stays identical. Real hygiene runs in the merge queue, on explicit
+manual/full-ci requests, and on direct pushes to the default branch. Pushes by
+`github-merge-queue[bot]` skip duplicate validation after a successful queue run.
+
 `python3 scripts/repo_hygiene.py --staged` runs offline in hooks;
 `--base BASE --head HEAD` scans every commit in a PR, including blobs later
 removed, including every merge against each parent, and the final range diff. Gitleaks scans the commit
