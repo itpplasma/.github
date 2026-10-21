@@ -7,7 +7,7 @@ This public, small workflow needs only `contents: read` and no paid service.
 
 `python3 scripts/repo_hygiene.py --staged` runs offline in hooks;
 `--base BASE --head HEAD` scans every commit in a PR, including blobs later
-removed, and the final diff for merge resolutions. Gitleaks scans the commit
+removed, including every merge against each parent, and the final range diff. Gitleaks scans the commit
 range or staged index, using upstream default rules with redacted output.
 Repository config, inline suppressions and environment overrides are ignored.
 Secret detection has no path exceptions.

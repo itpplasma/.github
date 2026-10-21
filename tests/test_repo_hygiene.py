@@ -65,6 +65,22 @@ class HygieneTest(unittest.TestCase):
         self.git('commit', '-qm', 'remove output')
         self.assertEqual(self.gate('--base', self.base).returncode, 1)
 
+    def test_transient_blob_introduced_by_merge(self):
+        self.git('checkout', '-qb', 'side')
+        self.add('side.txt')
+        self.git('commit', '-qm', 'side change')
+        self.git('checkout', '-q', '-')
+        self.add('main.txt')
+        self.git('commit', '-qm', 'main change')
+        self.git('merge', '--no-ff', '--no-commit', 'side')
+        self.add('merge-output.npy')
+        self.git('commit', '-qm', 'resolution introduces output')
+        self.git('rm', 'merge-output.npy')
+        self.git('commit', '-qm', 'remove resolution output')
+        result = self.gate('--base', self.base)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('merge-output.npy', result.stderr)
+
     def test_secret_staged_and_range(self):
         # Construct a known rule's synthetic credential; never a live token.
         token = 'gh' + 'p_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8'
