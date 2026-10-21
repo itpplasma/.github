@@ -1,0 +1,8 @@
+{
+  "name": "Repository hygiene",
+  "description": "Required secret, artifact and size gate for public repositories, including merge queues.",
+  "iconName": "octicon shield-check",
+  "categories": [
+    "Continuous integration"
+  ]
+}
