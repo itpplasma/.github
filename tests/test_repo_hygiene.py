@@ -103,7 +103,9 @@ class HygieneTest(unittest.TestCase):
 
     def test_staged_local_allowance(self):
         self.add('runs/output.npz')
-        self.assertEqual(self.gate().returncode, 1)  # blocked without local rule
+        result = self.gate()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(str(self.local_allow()), result.stderr)
         allow = self.local_allow()
         allow.write_text('runs/**\tLocal scratch artifact from run.py\n')
         self.assertEqual(self.gate().returncode, 0)  # passes with reasoned local rule
@@ -131,7 +133,10 @@ class HygieneTest(unittest.TestCase):
         self.local_allow().write_text('trace.npy\tLocal scratch artifact\n')
         self.add('trace.npy')
         self.git('commit', '-qm', 'add output')
-        self.assertEqual(self.gate('--base', self.base).returncode, 1)
+        result = self.gate('--base', self.base)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('.repo-hygiene-allow (glob<TAB>reason)', result.stderr)
+        self.assertNotIn(str(self.local_allow()), result.stderr)
 
     def test_tracked_allowance_applies_to_range(self):
         (self.repo / '.repo-hygiene-allow').write_text(

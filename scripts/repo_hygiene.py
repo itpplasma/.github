@@ -179,10 +179,11 @@ def check(staged, base, head, repository=None):
         print('\n'.join(failures[:30]), file=sys.stderr)
         print('Archive results externally; justify synthetic/published fixtures in '
               '.repo-hygiene-allow (glob<TAB>reason). No environment override.', file=sys.stderr)
-        print(f'In an external repository add the reasoned exception to the local file '
-              f'{local_allow_file()} instead of committing owner tooling there; '
-              'local rules cover paths only and never waive secret detection.',
-              file=sys.stderr)
+        if staged:
+            print(f'In an external repository add the reasoned exception to the local file '
+                  f'{local_allow_file()} instead of committing owner tooling there; '
+                  'local rules cover paths only and never waive secret detection.',
+                  file=sys.stderr)
         return 1
     # Force upstream defaults: repo config, ignore files, inline comments and env
     # must not silently bypass secret detection. Path allowances never waive secrets.
