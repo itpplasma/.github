@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Staged / commit-range gate. Exceptions live in .repo-hygiene-allow."""
+"""Staged / commit-range gate. Exceptions live in .repo-hygiene-allow.
+
+Only --staged local checks additionally read untracked path exceptions from
+$(git rev-parse --git-common-dir)/info/repo-hygiene-allow so external
+repositories can keep local artifacts without committing owner tooling.
+"""
 import argparse
 import fnmatch
 import json
@@ -21,11 +26,7 @@ def git(*args, **kwargs):
     return subprocess.check_output(['git', *args], **kwargs)
 
 
-def allowances(ref):
-    name = f'{ref}:.repo-hygiene-allow' if ref else ':.repo-hygiene-allow'
-    if subprocess.run(['git', 'cat-file', '-e', name], stderr=subprocess.DEVNULL).returncode:
-        return [], set()
-    text = git('show', name).decode('utf-8')
+def parse_allow(text, source, identities_allowed=True):
     rules, identities = [], set()
     section = "paths"
     for number, line in enumerate(text.splitlines(), 1):
@@ -33,20 +34,47 @@ def allowances(ref):
             continue
         if line.strip() in ('identities:', 'paths:'):
             section = line.strip()[:-1]
+            if section == 'identities' and not identities_allowed:
+                raise ValueError(f'{source}:{number}: local allowances cannot exempt '
+                                 'identities; only path exceptions are permitted')
             continue
         fields = line.split('\t', 1)
         if len(fields) != 2 or not all(field.strip() for field in fields):
-            raise ValueError(f'.repo-hygiene-allow:{number}: expected {section} entry<TAB>reason')
+            raise ValueError(f'{source}:{number}: expected {section} entry<TAB>reason')
         pattern, reason = (field.strip() for field in fields)
         if section == 'identities':
             if not re.fullmatch(r'[^\s<>@*?]+@[^\s<>@*?]+', pattern):
-                raise ValueError(f'.repo-hygiene-allow:{number}: expected exact email<TAB>reason')
+                raise ValueError(f'{source}:{number}: expected exact email<TAB>reason')
             identities.add(pattern.casefold())
             continue
         if pattern.startswith('/') or '..' in pattern.split('/'):
-            raise ValueError(f'.repo-hygiene-allow:{number}: use repository-relative globs')
+            raise ValueError(f'{source}:{number}: use repository-relative globs')
         rules.append((pattern, reason))
     return rules, identities
+
+
+def allowances(ref):
+    name = f'{ref}:.repo-hygiene-allow' if ref else ':.repo-hygiene-allow'
+    if subprocess.run(['git', 'cat-file', '-e', name], stderr=subprocess.DEVNULL).returncode:
+        return [], set()
+    return parse_allow(git('show', name).decode('utf-8'), '.repo-hygiene-allow')
+
+
+def local_allow_file():
+    common = Path(git('rev-parse', '--git-common-dir').decode().strip())
+    return (common if common.is_absolute() else Path.cwd() / common) / 'info' / 'repo-hygiene-allow'
+
+
+def local_allowances():
+    """Path exceptions outside tracked content, for --staged checks only.
+
+    Never grants identity exemptions; secrets are never waived because
+    gitleaks runs after path allowances regardless of these rules."""
+    path = local_allow_file()
+    if not path.exists():
+        return []
+    rules, _ = parse_allow(path.read_text('utf-8'), str(path), identities_allowed=False)
+    return rules
 
 
 def warn_local_identity():
@@ -126,6 +154,8 @@ def check(staged, base, head, repository=None):
         blobs.extend(entries(git('diff', '--raw', '-z', '--no-abbrev', '--no-renames',
                                  '--diff-filter=AMT', base, head)))
     rules, allowed_identities = allowances(None if staged else head)
+    if staged:
+        rules = rules + local_allowances()
     oids = sorted({oid for _, oid in blobs})
     sizes = {}
     if oids:
@@ -149,6 +179,11 @@ def check(staged, base, head, repository=None):
         print('\n'.join(failures[:30]), file=sys.stderr)
         print('Archive results externally; justify synthetic/published fixtures in '
               '.repo-hygiene-allow (glob<TAB>reason). No environment override.', file=sys.stderr)
+        if staged:
+            print(f'In an external repository add the reasoned exception to the local file '
+                  f'{local_allow_file()} instead of committing owner tooling there; '
+                  'local rules cover paths only and never waive secret detection.',
+                  file=sys.stderr)
         return 1
     # Force upstream defaults: repo config, ignore files, inline comments and env
     # must not silently bypass secret detection. Path allowances never waive secrets.

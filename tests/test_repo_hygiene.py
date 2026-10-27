@@ -93,12 +93,68 @@ class HygieneTest(unittest.TestCase):
         self.git('commit', '-qm', 'remove')
         self.assertEqual(self.gate('--base', self.base).returncode, 1)
 
+    def local_allow(self):
+        common = Path(self.git('rev-parse', '--git-common-dir').strip())
+        if not common.is_absolute():
+            common = self.repo / common
+        info = common / 'info'
+        info.mkdir(parents=True, exist_ok=True)
+        return info / 'repo-hygiene-allow'
+
+    def test_staged_local_allowance(self):
+        self.add('runs/output.npz')
+        result = self.gate()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(str(self.local_allow()), result.stderr)
+        allow = self.local_allow()
+        allow.write_text('runs/**\tLocal scratch artifact from run.py\n')
+        self.assertEqual(self.gate().returncode, 0)  # passes with reasoned local rule
+        self.assertNotIn('repo-hygiene-allow', self.git('status', '--porcelain'))
+        allow.write_text('runs/**\n')  # missing reason
+        self.assertEqual(self.gate().returncode, 2)  # malformed fails
+        allow.unlink()
+        self.assertEqual(self.gate().returncode, 1)  # missing file: blocked again
+
+    def test_local_allowance_never_waives_secrets(self):
+        token = 'gh' + 'p_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8'
+        self.add('runs/notes.txt', ('token=' + token + '\n').encode())
+        self.local_allow().write_text('runs/**\tLocal scratch output\n')
+        result = self.gate()
+        self.assertEqual(result.returncode, 1)  # gitleaks still runs and blocks
+
+    def test_local_allowance_rejects_identities_and_absolute_paths(self):
+        self.add('runs/output.npz')
+        self.local_allow().write_text('identities:\nbot@example.org\tSome bot\n')
+        self.assertEqual(self.gate().returncode, 2)
+        self.local_allow().write_text('/runs/**\tAbsolute pattern\n')
+        self.assertEqual(self.gate().returncode, 2)
+
+    def test_range_ignores_local_allowance(self):
+        self.local_allow().write_text('trace.npy\tLocal scratch artifact\n')
+        self.add('trace.npy')
+        self.git('commit', '-qm', 'add output')
+        result = self.gate('--base', self.base)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('.repo-hygiene-allow (glob<TAB>reason)', result.stderr)
+        self.assertNotIn(str(self.local_allow()), result.stderr)
+
+    def test_tracked_allowance_applies_to_range(self):
+        (self.repo / '.repo-hygiene-allow').write_text(
+            'trace.npy\tSynthetic fixture from generator.py\n')
+        self.git('add', '.repo-hygiene-allow')
+        self.git('commit', '-qm', 'allow fixture')
+        self.add('trace.npy')
+        self.git('commit', '-qm', 'add fixture')
+        self.assertEqual(self.gate('--base', self.base).returncode, 0)
+
     def test_linked_worktree(self):
         worktree = self.repo.parent / 'worktree'
         self.git('worktree', 'add', '-qb', 'worktree-test', str(worktree))
         self.repo = worktree
         self.add('results/archive.csv.gz')
         self.assertEqual(self.gate().returncode, 1)
+        self.local_allow().write_text('results/**\tLocal scratch output\n')
+        self.assertEqual(self.gate().returncode, 0)
 
 
 if __name__ == '__main__':

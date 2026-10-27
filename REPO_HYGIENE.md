@@ -45,7 +45,7 @@ to at most 5 MiB per PR (or staged change); repeated copies of the same blob
 count once. Modified files count at their full new size. Historic, unchanged
 files are not charged. A rename is inspected as an addition.
 
-Exceptions come only from the committed head (or staged index) file
+Shared exceptions come from the committed head (or staged index) file
 `.repo-hygiene-allow`: repository-relative glob, TAB, one-line reason. Blank
 lines and `#` comments are accepted. Review allowances as part of the PR.
 For example, `tests/fixtures/**` followed by a TAB and
@@ -53,6 +53,13 @@ For example, `tests/fixtures/**` followed by a TAB and
 Only synthetic or published data belong in fixtures. Never commit non-public
 machine/experiment or collaborator data (ITER/TC24/IMAS, AUG shots, JT-60SA).
 Keep campaign outputs outside Git, with checksums and a recorded location.
+
+For staged checks in external repositories, keep local path exceptions in
+`$(git rev-parse --git-common-dir)/info/repo-hygiene-allow`. This file is shared
+by the repository’s worktrees and stays outside commits. Use `glob<TAB>reason`,
+as in `.repo-hygiene-allow`; absolute patterns, missing reasons and `identities:`
+sections are rejected. Range and CI checks ignore this file, and its rules never
+waive secret detection.
 
 Heavy CI runs only in public repositories. Private repositories validate via
 cluster jobs recorded in the PR; GitHub Free cannot enforce private rulesets.
