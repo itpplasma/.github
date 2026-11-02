@@ -39,6 +39,14 @@ add `--github-repository OWNER/REPO` with `GITHUB_TOKEN` to verify identities to
 The staged local check stays offline and only warns when the effective author or
 committer email differs from `git config user.email`; it does not block that case.
 
+In a GitHub fork, CI fetches the parent repository's branches into
+`refs/upstream/*` and passes `--upstream-ref 'refs/upstream/*'`. Commits
+reachable from those refs are published history the fork does not control:
+their identities, blobs and secrets are not checked, and a path stays exempt
+while it carries the parent's exact blob (for example after merging the
+parent). The fork's own commits, including the merge commit and its conflict
+resolutions, are checked in full.
+
 Each added/modified file blob must be at most 1 MiB. Data/archive/document types
 require an explicit fixture allowance. Unique, non-exempt added blob bytes sum
 to at most 5 MiB per PR (or staged change); repeated copies of the same blob

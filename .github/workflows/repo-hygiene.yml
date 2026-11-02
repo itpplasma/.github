@@ -14,7 +14,7 @@ jobs:
       github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.actor != 'github-merge-queue[bot]')
     name: repo-hygiene
     runs-on: ${{ github.event.pull_request.head.repo.fork && fromJSON('["self-hosted","itp-ubuntu24"]') || fromJSON('["self-hosted", "itp-light"]') }}
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       # Public consumers need Git objects, never recursive submodule/auth setup.
       - name: Fetch the public consumer at the exact tested revision
@@ -31,6 +31,18 @@ jobs:
           fi
           git fetch --no-tags origin "${refs[@]}"
           GIT_LFS_SKIP_SMUDGE=1 git -c submodule.recurse=false checkout --detach "$HEAD"
+      # A fork's parent history is published and outside the fork's control.
+      - name: Fetch the parent repository of a fork
+        env:
+          REPOSITORY: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          parent=$(curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$REPOSITORY" |
+            python3 -c 'import json, sys; print((json.load(sys.stdin).get("parent") or {}).get("full_name", ""))')
+          if [ -n "$parent" ]; then
+            git fetch --no-tags "https://github.com/$parent.git" '+refs/heads/*:refs/upstream/*'
+          fi
       - uses: actions/checkout@v6
         with:
           repository: itpplasma/.github
@@ -57,4 +69,8 @@ jobs:
           if [ -z "$BASE" ] || [ "$BASE" = 0000000000000000000000000000000000000000 ]; then
             BASE=$(git rev-parse "$HEAD^")
           fi
-          python3 .hygiene-tools/scripts/repo_hygiene.py --base "$BASE" --head "$HEAD" --github-repository "${{ github.repository }}"
+          upstream=()
+          if git for-each-ref --count=1 --format=x refs/upstream/ | grep -q x; then
+            upstream=(--upstream-ref 'refs/upstream/*')
+          fi
+          python3 .hygiene-tools/scripts/repo_hygiene.py --base "$BASE" --head "$HEAD" --github-repository "${{ github.repository }}" "${upstream[@]}"
