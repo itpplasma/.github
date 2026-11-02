@@ -137,7 +137,20 @@ def entries(raw):
         yield os.fsdecode(fields[i + 1]), oid
 
 
-def check(staged, base, head, repository=None):
+def commit_blobs(commit):
+    return entries(git('diff-tree', '--root', '-m', '--no-commit-id', '-r', '--raw', '-z',
+                       '--no-abbrev', '--no-renames', '--diff-filter=AMT', commit))
+
+
+def upstream_exclusion(upstream):
+    """rev-list arguments that drop commits reachable from the fork parent's refs."""
+    for pattern in upstream:
+        if not re.fullmatch(r'refs/[A-Za-z0-9_./*-]+', pattern) or '..' in pattern:
+            raise ValueError(f'invalid upstream ref pattern {pattern!r}')
+    return ['--not', *(f'--glob={pattern}' for pattern in upstream)] if upstream else []
+
+
+def check(staged, base, head, repository=None, upstream=()):
     commits = []
     if staged:
         warn_local_identity()
@@ -145,14 +158,20 @@ def check(staged, base, head, repository=None):
                                  '--no-renames', '--diff-filter=AMT')))
     else:
         blobs = []
-        commits = git('rev-list', '--reverse', f'{base}..{head}').decode().splitlines()
+        exclusion = upstream_exclusion(upstream)
+        commits = git('rev-list', '--reverse', f'{base}..{head}',
+                      *exclusion).decode().splitlines()
+        # Commits of the fork parent are published upstream history that the
+        # fork does not control; a path keeps that exemption while it carries
+        # the parent's exact blob, for example through a merge of the parent.
+        inherited = set(git('rev-list', f'{base}..{head}').decode().split()) - set(commits)
+        published = {entry for commit in inherited for entry in commit_blobs(commit)}
         for commit in commits:
-            blobs.extend(entries(git('diff-tree', '--root', '-m', '--no-commit-id', '-r',
-                                     '--raw', '-z', '--no-abbrev', '--no-renames',
-                                     '--diff-filter=AMT', commit)))
+            blobs.extend(commit_blobs(commit))
         # Also inspect the net range diff; -m above checks each merge parent.
         blobs.extend(entries(git('diff', '--raw', '-z', '--no-abbrev', '--no-renames',
                                  '--diff-filter=AMT', base, head)))
+        blobs = [entry for entry in blobs if entry not in published]
     rules, allowed_identities = allowances(None if staged else head)
     if staged:
         rules = rules + local_allowances()
@@ -193,7 +212,8 @@ def check(staged, base, head, repository=None):
         args = ['gitleaks', 'protect' if staged else 'detect', '--no-banner',
                 '--redact', '--log-level=error', '--config', str(config),
                 '--gitleaks-ignore-path', os.devnull, '--ignore-gitleaks-allow']
-        args += ['--staged'] if staged else ['--log-opts', f'{base}..{head}']
+        args += ['--staged'] if staged else [
+            '--log-opts', ' '.join([f'{base}..{head}', *upstream_exclusion(upstream)])]
         env = {k: v for k, v in os.environ.items() if not k.startswith('GITLEAKS_')}
         return subprocess.run(args, env=env).returncode
 
@@ -204,14 +224,17 @@ def main():
     parser.add_argument('--base')
     parser.add_argument('--head', default='HEAD')
     parser.add_argument('--github-repository', help='verify range identities via GitHub (needs GITHUB_TOKEN)')
+    parser.add_argument('--upstream-ref', action='append', default=[], metavar='GLOB',
+                        help='exempt range commits reachable from these refs (fork parent)')
     args = parser.parse_args()
     if args.staged == bool(args.base):
         parser.error('choose --staged or --base REF [--head REF]')
-    if args.staged and args.github_repository:
-        parser.error('--github-repository requires --base')
+    if args.staged and (args.github_repository or args.upstream_ref):
+        parser.error('--github-repository and --upstream-ref require --base')
     os.chdir(git('rev-parse', '--show-toplevel').decode().strip())
     try:
-        return check(args.staged, args.base, args.head, args.github_repository)
+        return check(args.staged, args.base, args.head, args.github_repository,
+                     args.upstream_ref)
     except (OSError, ValueError, subprocess.CalledProcessError) as exc:
         print(f'repo-hygiene: {exc}', file=sys.stderr)
         return 2

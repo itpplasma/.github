@@ -93,6 +93,45 @@ class HygieneTest(unittest.TestCase):
         self.git('commit', '-qm', 'remove')
         self.assertEqual(self.gate('--base', self.base).returncode, 1)
 
+    def fork_merge(self):
+        """Merge a parent-repository branch whose history the fork does not control."""
+        self.git('checkout', '-qb', 'parent')
+        self.add('docs/manual.pdf')
+        self.add('example/eq.geqdsk', b'y' * (1024 * 1024 + 1))
+        for i in range(6):
+            self.add(f'src/{i}.f', bytes([65 + i]) * (900 * 1024))
+        token = 'gh' + 'p_' + 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8'
+        self.add('credentials.txt', ('token=' + token + '\n').encode())
+        self.git('commit', '-qm', 'parent history')
+        self.git('update-ref', 'refs/upstream/main', 'HEAD')
+        self.git('checkout', '-q', '-')
+        self.add('own.txt')
+        self.git('commit', '-qm', 'fork change')
+        self.git('merge', '--no-ff', '-qm', 'merge parent', 'parent')
+
+    def test_fork_parent_history_is_exempt(self):
+        self.fork_merge()
+        self.assertEqual(self.gate('--base', self.base).returncode, 1)
+        result = self.gate('--base', self.base, '--upstream-ref', 'refs/upstream/*')
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_fork_changes_after_parent_merge_are_checked(self):
+        self.fork_merge()
+        self.add('example/eq.geqdsk', b'z' * (1024 * 1024 + 1))
+        self.git('commit', '-qm', 'fork edits a parent file')
+        result = self.gate('--base', self.base, '--upstream-ref', 'refs/upstream/*')
+        self.assertIn('example/eq.geqdsk', result.stderr)
+        self.git('reset', '-q', '--hard', 'HEAD^')
+        self.add('trace.npy')
+        self.git('commit', '-qm', 'fork output')
+        result = self.gate('--base', self.base, '--upstream-ref', 'refs/upstream/*')
+        self.assertIn('trace.npy', result.stderr)
+        self.assertNotIn('manual.pdf', result.stderr)
+
+    def test_upstream_ref_pattern_and_mode(self):
+        self.assertEqual(self.gate('--base', self.base, '--upstream-ref', 'HEAD').returncode, 2)
+        self.assertEqual(self.gate('--staged', '--upstream-ref', 'refs/upstream/*').returncode, 2)
+
     def local_allow(self):
         common = Path(self.git('rev-parse', '--git-common-dir').strip())
         if not common.is_absolute():
