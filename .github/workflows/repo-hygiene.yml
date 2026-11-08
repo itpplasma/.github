@@ -13,13 +13,17 @@ jobs:
     if: >-
       github.event_name == 'merge_group' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.actor != 'github-merge-queue[bot]')
     name: repo-hygiene
-    runs-on: ${{ github.event.pull_request.head.repo.fork && fromJSON('["self-hosted","itp-ubuntu24"]') || fromJSON('["self-hosted", "itp-light"]') }}
+    # The self-hosted runners serve itpplasma; consumers in other organisations
+    # run on GitHub's hosted runners.
+    runs-on: ${{ github.repository_owner != 'itpplasma' && 'ubuntu-24.04' || (github.event.pull_request.head.repo.fork && fromJSON('["self-hosted","itp-ubuntu24"]') || fromJSON('["self-hosted", "itp-light"]')) }}
     timeout-minutes: 10
     steps:
-      # Public consumers need Git objects, never recursive submodule/auth setup.
-      - name: Fetch the public consumer at the exact tested revision
+      # Consumers need Git objects, never recursive submodule setup; the job's
+      # read token lets private consumers be fetched as well.
+      - name: Fetch the consumer at the exact tested revision
         env:
           REPOSITORY: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ github.token }}
           BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
           HEAD: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha || github.sha }}
         run: |
@@ -29,7 +33,9 @@ jobs:
           if [ -n "$BASE" ] && [ "$BASE" != 0000000000000000000000000000000000000000 ]; then
             refs+=("$BASE")
           fi
-          git fetch --no-tags origin "${refs[@]}"
+          auth=$(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)
+          git -c http.https://github.com/.extraheader="AUTHORIZATION: basic $auth" \
+            fetch --no-tags origin "${refs[@]}"
           GIT_LFS_SKIP_SMUDGE=1 git -c submodule.recurse=false checkout --detach "$HEAD"
       # A fork's parent history is published and outside the fork's control.
       - name: Fetch the parent repository of a fork
