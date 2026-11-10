@@ -210,7 +210,7 @@ def check(staged, base, head, repository=None, upstream=()):
         config = Path(tmp) / 'gitleaks.toml'
         config.write_text('[extend]\nuseDefault = true\n')
         args = ['gitleaks', 'protect' if staged else 'detect', '--no-banner',
-                '--redact', '--log-level=error', '--config', str(config),
+                '--redact', '--verbose', '--log-level=error', '--config', str(config),
                 '--gitleaks-ignore-path', os.devnull, '--ignore-gitleaks-allow']
         args += ['--staged'] if staged else [
             '--log-opts', ' '.join([f'{base}..{head}', *upstream_exclusion(upstream)])]

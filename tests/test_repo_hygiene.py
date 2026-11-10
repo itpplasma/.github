@@ -160,6 +160,9 @@ class HygieneTest(unittest.TestCase):
         self.local_allow().write_text('runs/**\tLocal scratch output\n')
         result = self.gate()
         self.assertEqual(result.returncode, 1)  # gitleaks still runs and blocks
+        output = result.stdout + result.stderr
+        self.assertIn('runs/notes.txt', output)  # the blocked finding is named
+        self.assertNotIn(token, output)  # but its secret is redacted
 
     def test_local_allowance_rejects_identities_and_absolute_paths(self):
         self.add('runs/output.npz')
