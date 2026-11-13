@@ -47,7 +47,10 @@ jobs:
             -H 'Accept: application/vnd.github+json' "https://api.github.com/repos/$REPOSITORY" |
             python3 -c 'import json, sys; print((json.load(sys.stdin).get("parent") or {}).get("full_name", ""))')
           if [ -n "$parent" ]; then
-            git fetch --no-tags "https://github.com/$parent.git" '+refs/heads/*:refs/upstream/*'
+            # Only the parent's commit graph is needed to exclude its commits;
+            # a full fetch of a large parent fills the runner disk.
+            git remote add upstream "https://github.com/$parent.git"
+            git -c gc.auto=0 fetch --no-tags --filter=tree:0 upstream '+refs/heads/*:refs/upstream/*'
           fi
       - uses: actions/checkout@v6
         with:
